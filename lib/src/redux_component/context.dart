@@ -3,70 +3,77 @@ import 'package:flutter/widgets.dart';
 import '../../fish_redux.dart';
 import '../redux/redux.dart';
 import 'basic.dart';
-import 'provider.dart';
 
-class _ExtraMixin {
+mixin _ExtraMixin {
   Map<String, Object> _extra;
   Map<String, Object> get extra => _extra ??= <String, Object>{};
 }
 
 /// Default Context
 class DefaultContext<T> extends ContextSys<T> with _ExtraMixin {
-  final AbstractLogic<T> factors;
-  final PageStore<Object> store;
-  final Get<BuildContext> getBuildContext;
+  final AbstractLogic<T> logic;
+  @override
+  final MixedStore<Object> store;
   final Get<T> getState;
 
+  void Function() Function(Subscribe) _observer;
+
+  BuildContext _buildContext;
   Dispatch _dispatch;
+  Dispatch _onBroadcast;
 
   DefaultContext({
-    @required this.factors,
+    @required this.logic,
     @required this.store,
-    @required this.getBuildContext,
+    @required BuildContext buildContext,
     @required this.getState,
-  })  : assert(factors != null),
+  })  : assert(logic != null),
         assert(store != null),
-        assert(getBuildContext != null),
-        assert(getState != null) {
-    final OnAction onAction = factors.createHandlerOnAction(this);
+        assert(buildContext != null),
+        assert(getState != null),
+        _buildContext = buildContext {
+    final Dispatch onAction = logic.createHandlerOnAction(this);
 
     /// create Dispatch
-    _dispatch = factors.createDispatch(onAction, this, store.dispatch);
+    _dispatch = logic.createDispatch(onAction, this, store.dispatch);
 
     /// Register inter-component broadcast
-    final OnAction onBroadcast =
-        factors.createHandlerOnBroadcast(onAction, this, store.dispatch);
-    regiestOnDisposed(store.registerReceiver(onBroadcast));
+    _onBroadcast =
+        logic.createHandlerOnBroadcast(onAction, this, store.dispatch);
+    registerOnDisposed(store.registerComponentReceiver(_onBroadcast));
   }
 
   @override
-  BuildContext get context {
-    assert(_throwIfDisposed());
-    return getBuildContext();
+  void bindObserver(void Function(Subscribe) observer) {
+    assert(_observer == null);
+    _observer = observer;
   }
+
+  @override
+  BuildContext get context => _buildContext;
 
   @override
   T get state => getState();
 
   @override
-  Dispatch get dispatch => _dispatch;
+  dynamic dispatch(Action action) => _dispatch(action);
 
   @override
   Widget buildComponent(String name) {
     assert(name != null, 'The name must be NotNull for buildComponent.');
-    assert(_throwIfDisposed());
-    final Dependent<T> dependent = factors.slot(name);
-    assert(dependent != null, 'Could not found component by name "$name."');
-    return dependent?.buildComponent(store, getState) ?? Container();
+    final Dependent<T> dependent = logic.slot(name);
+    final Widget result = dependent?.buildComponent(store, getState) ??
+        store.buildComponent(name);
+    assert(result != null, 'Could not found component by name "$name."');
+    return result ?? Container();
   }
 
   @override
   ListAdapter buildAdapter() {
-    assert(factors is AbstractAdapter<T>);
-    assert(_throwIfDisposed());
+    assert(logic is AbstractAdapter<T>);
     ListAdapter result;
-    if (factors is AbstractAdapter<T>) {
-      final AbstractAdapter<T> abstractAdapter = factors;
+    if (logic is AbstractAdapter<T>) {
+      final AbstractAdapter<T> abstractAdapter = logic;
       result = abstractAdapter.buildAdapter(state, dispatch, this);
     }
     return result ?? const ListAdapter(null, 0);
@@ -79,15 +86,14 @@ class DefaultContext<T> extends ContextSys<T> with _ExtraMixin {
   }
 
   @override
-  void appBroadcast(Action action) {
-    assert(_throwIfDisposed());
-    AppProvider.appBroadcast(context, action);
+  void broadcast(Action action) {
+    store.broadcast(action);
   }
 
   @override
-  void pageBroadcast(Action action) {
-    assert(_throwIfDisposed());
-    store.sendBroadcast(action);
+  void dispose() {
+    super.dispose();
+    _buildContext = null;
   }
 
   bool _throwIfDisposed() {
@@ -97,20 +103,38 @@ class DefaultContext<T> extends ContextSys<T> with _ExtraMixin {
     }
     return true;
   }
+
+  @override
+  State<StatefulWidget> get stfState {
+    assert(_buildContext is StatefulElement);
+    if (_buildContext is StatefulElement) {
+      final StatefulElement stfElement = _buildContext;
+      return stfElement.state;
+    }
+    return null;
+  }
+
+  @override
+  void broadcastEffect(Action action, {bool excluded}) =>
+      store.broadcastEffect(action,
+          excluded: excluded == true ? _onBroadcast : null);
+
+  @override
+  void Function() addObservable(Subscribe observable) => _observer(observable);
 }
 
-class _TwinceContext<T> extends ContextSys<T> with _ExtraMixin {
+class _TwinContext<T> extends ContextSys<T> with _ExtraMixin {
   final ContextSys<T> mainCtx;
   final ContextSys<T> sidecarCtx;
 
-  _TwinceContext(this.mainCtx, this.sidecarCtx)
+  _TwinContext(this.mainCtx, this.sidecarCtx)
       : assert(mainCtx != null && sidecarCtx != null) {
     mainCtx.setParent(this);
     sidecarCtx.setParent(this);
   }
 
   @override
-  void appBroadcast(Action action) => AppProvider.appBroadcast(context, action);
+  void broadcast(Action action) => mainCtx.broadcast(action);
 
   @override
   ListAdapter buildAdapter() => sidecarCtx.buildAdapter();
@@ -122,7 +146,7 @@ class _TwinceContext<T> extends ContextSys<T> with _ExtraMixin {
   BuildContext get context => mainCtx.context;
 
   @override
-  Dispatch get dispatch => mainCtx.dispatch;
+  dynamic dispatch(Action action) => mainCtx.dispatch(action);
 
   @override
   void onLifecycle(Action action) {
@@ -134,9 +158,23 @@ class _TwinceContext<T> extends ContextSys<T> with _ExtraMixin {
   T get state => mainCtx.state;
 
   @override
-  void pageBroadcast(Action action) => mainCtx.pageBroadcast(action);
+  State<StatefulWidget> get stfState => mainCtx.stfState;
+
+  @override
+  void broadcastEffect(Action action, {bool excluded}) =>
+      mainCtx.broadcastEffect(action, excluded: excluded);
+
+  @override
+  void Function() addObservable(Subscribe s) => mainCtx.addObservable(s);
+
+  @override
+  void bindObserver(void Function(Subscribe) observer) =>
+      mainCtx.bindObserver(observer);
+
+  @override
+  MixedStore<dynamic> get store => mainCtx.store;
 }
 
-ContextSys<T> mergeContext<T>(ContextSys<T> mainCtx, ContextSys<T> sidecarCtx) {
-  return sidecarCtx != null ? _TwinceContext<T>(mainCtx, sidecarCtx) : mainCtx;
-}
+ContextSys<T> mergeContext<T>(
+        ContextSys<T> mainCtx, ContextSys<T> sidecarCtx) =>
+    sidecarCtx != null ? _TwinContext<T>(mainCtx, sidecarCtx) : mainCtx;
