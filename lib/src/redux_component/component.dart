@@ -178,6 +178,18 @@ class _ViewUpdater<T> implements ViewUpdater<T> {
   void reassemble() {
     _widgetCache = null;
   }
+
+  @override
+  void forceUpdate() {
+    _widgetCache = null;
+
+    try {
+      markNeedsBuild();
+    } catch (e) {
+      /// TODO
+      /// should try-catch in force mode which is called from outside
+    }
+  }
 }
 
 class ComponentWidget<T> extends StatefulWidget {
@@ -203,8 +215,11 @@ class ComponentState<T> extends State<ComponentWidget<T>> {
   ContextSys<T> _mainCtx;
   ViewUpdater<T> _viewUpdater;
 
+  Widget buildWidget(BuildContext context) => _viewUpdater.buildView();
+
+  @mustCallSuper
   @override
-  Widget build(BuildContext context) => _viewUpdater.buildView();
+  Widget build(BuildContext context) => buildWidget(context);
 
   @override
   @protected
@@ -215,6 +230,7 @@ class ComponentState<T> extends State<ComponentWidget<T>> {
     _mainCtx.onLifecycle(LifecycleCreator.reassemble());
   }
 
+  @mustCallSuper
   @override
   void initState() {
     super.initState();
@@ -232,32 +248,33 @@ class ComponentState<T> extends State<ComponentWidget<T>> {
       }
     });
 
-    _mainCtx.bindObserver((Subscribe observer) {
-      final AutoDispose autoDispose =
-          _mainCtx.registerOnDisposed(observer(_viewUpdater.onNotify));
-      return () {
-        autoDispose.dispose();
-      };
+    //// force update if driven from outside
+    _mainCtx.bindForceUpdate(() {
+      _viewUpdater.forceUpdate();
     });
 
     /// register store.subscribe
-    _mainCtx.addObservable(widget.store.subscribe);
+    _mainCtx.registerOnDisposed(
+        widget.store.subscribe(() => _viewUpdater.onNotify()));
 
     _mainCtx.onLifecycle(LifecycleCreator.initState());
   }
 
+  @mustCallSuper
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _mainCtx.onLifecycle(LifecycleCreator.didChangeDependencies());
   }
 
+  @mustCallSuper
   @override
   void deactivate() {
     super.deactivate();
     _mainCtx.onLifecycle(LifecycleCreator.deactivate());
   }
 
+  @mustCallSuper
   @override
   void didUpdateWidget(ComponentWidget<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -265,6 +282,7 @@ class ComponentState<T> extends State<ComponentWidget<T>> {
     _mainCtx.onLifecycle(LifecycleCreator.didUpdateWidget());
   }
 
+  @mustCallSuper
   @override
   void dispose() {
     _mainCtx

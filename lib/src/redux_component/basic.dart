@@ -38,6 +38,7 @@ abstract class ViewUpdater<T> {
   Widget buildView();
   void didUpdateWidget();
   void onNotify();
+  void forceUpdate();
   void reassemble();
 }
 
@@ -166,7 +167,7 @@ abstract class Context<T> extends AutoDispose {
   /// For example, we want to use SingleTickerProviderStateMixin
   /// We should
   /// 1. Define a new ComponentState
-  ///    class CustomStfState extends ComponentState<T> with SingleTickerProviderStateMixin {}
+  ///    class CustomStfState<T> extends ComponentState<T> with SingleTickerProviderStateMixin {}
   /// 2. Override the createState method of the Component with the newly defined CustomStfState.
   ///    @override
   ///    CustomStfState createState() => CustomStfState();
@@ -192,6 +193,8 @@ abstract class Context<T> extends AutoDispose {
 
   /// add observable
   void Function() addObservable(Subscribe observable);
+
+  void forceUpdate();
 }
 
 /// Seen in framework-component
@@ -199,7 +202,7 @@ abstract class ContextSys<T> extends Context<T> implements ViewService {
   /// Response to lifecycle calls
   void onLifecycle(Action action);
 
-  void bindObserver(void Function(Subscribe) observer);
+  void bindForceUpdate(void Function() forceUpdate);
 
   MixedStore<dynamic> get store;
 }
