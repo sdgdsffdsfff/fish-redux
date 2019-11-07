@@ -1,7 +1,8 @@
 import 'package:fish_redux/fish_redux.dart';
-import 'package:flutter/material.dart';
-import 'state.dart';
+import 'package:flutter/material.dart' hide Action;
+
 import 'action.dart';
+import 'state.dart';
 
 Widget toDoView(Todo toDo, Dispatch dispatch, ViewService viewService) {
   return Container(
@@ -103,7 +104,7 @@ dynamic toDoEffectAsync(Action action, Context<Todo> ctx) {
   return null;
 }
 
-OnAction toDoHigherEffect(Context<Todo> ctx) =>
+Dispatch toDoHigherEffect(Context<Todo> ctx) =>
     (Action action) => toDoEffect(action, ctx);
 
 Todo toDoReducer(Todo state, Action action) {

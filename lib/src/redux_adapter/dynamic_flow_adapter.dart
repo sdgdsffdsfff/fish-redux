@@ -1,24 +1,22 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide Action;
 
 import '../redux/redux.dart';
-import '../redux_component/logic.dart';
 import '../redux_component/redux_component.dart';
 import '../utils/utils.dart';
 import 'recycle_context.dart';
 
 class ItemBean {
-  String type;
-  Object data;
+  final String type;
+  final Object data;
 
-  ItemBean(this.type, this.data);
+  const ItemBean(this.type, this.data);
 
-  ItemBean clone() => ItemBean(type, data);
+  ItemBean clone({String type, Object data}) =>
+      ItemBean(type ?? this.type, data ?? this.data);
 }
 
 /// template is a map, driven by array
-class DynamicFlowAdapter<T> extends Logic<T>
-    with RecycleContextMixin<T>
-    implements AbstractAdapter<T> {
+class DynamicFlowAdapter<T> extends Logic<T> with RecycleContextMixin<T> {
   final Map<String, AbstractLogic<Object>> pool;
   final AbstractConnector<T, List<ItemBean>> connector;
 
@@ -28,30 +26,31 @@ class DynamicFlowAdapter<T> extends Logic<T>
     ReducerFilter<T> filter,
     Reducer<T> reducer,
     Effect<T> effect,
-    HigherEffect<T> higherEffect,
-    Object Function(T) key,
+
+    /// implement [StateKey] in T instead of using key in Logic.
+    /// class T implements StateKey {
+    ///   Object _key = UniqueKey();
+    ///   Object key() => _key;
+    /// }
+    @deprecated Object Function(T) key,
   }) : super(
           reducer: _dynamicReducer(reducer, pool, connector),
           effect: effect,
-          higherEffect: higherEffect,
           filter: filter,
           dependencies: null,
+          // ignore:deprecated_member_use_from_same_package
           key: key,
         );
 
   @override
-  ListAdapter buildAdapter(
-    T state,
-    Dispatch dispatch,
-    ViewService viewService,
-  ) {
-    final List<ItemBean> list = connector.get(state);
+  ListAdapter buildAdapter(ContextSys<T> ctx) {
+    final List<ItemBean> list = connector.get(ctx.state);
     assert(list != null);
 
-    final RecycleContext<T> ctx = viewService;
+    final RecycleContext<T> recycleCtx = ctx;
     final List<ListAdapter> adapters = <ListAdapter>[];
 
-    ctx.markAllUnused();
+    recycleCtx.markAllUnused();
 
     for (int index = 0; index < list.length; index++) {
       final ItemBean itemBean = list[index];
@@ -61,35 +60,33 @@ class DynamicFlowAdapter<T> extends Logic<T>
           result != null, 'Type of $type has not benn registered in the pool.');
       if (result != null) {
         if (result is AbstractAdapter<Object>) {
-          final ContextSys<Object> subCtx = ctx.reuseOrCreate(
+          final ContextSys<Object> subCtx = recycleCtx.reuseOrCreate(
             Tuple2<Type, Object>(
               result.runtimeType,
               result.key(itemBean.data),
             ),
-            () {
-              return result.createContext(
-                store: ctx.store,
-                buildContext: ctx.context,
-                getState: _subGetter(() => connector.get(ctx.state), index),
-              );
-            },
+            () => result.createContext(
+                  recycleCtx.store,
+                  recycleCtx.context,
+                  _subGetter(() => connector.get(recycleCtx.state), index),
+                  bus: recycleCtx.bus,
+                  enhancer: recycleCtx.enhancer,
+                ),
           );
-          adapters.add(result.buildAdapter(
-            subCtx.state,
-            subCtx.dispatch,
-            subCtx,
-          ));
+          adapters.add(result.buildAdapter(subCtx));
         } else if (result is AbstractComponent<Object>) {
           adapters.add(ListAdapter((BuildContext buildContext, int _) {
             return result.buildComponent(
-              ctx.store,
-              _subGetter(() => connector.get(ctx.state), index),
+              recycleCtx.store,
+              _subGetter(() => connector.get(recycleCtx.state), index),
+              bus: recycleCtx.bus,
+              enhancer: recycleCtx.enhancer,
             );
           }, 1));
         }
       }
     }
-    ctx.cleanUnused();
+    recycleCtx.cleanUnused();
 
     return combineListAdapters(adapters);
   }
@@ -111,7 +108,7 @@ Reducer<T> _dynamicReducer<T>(
         final Object newData = result.onReducer(itemBean.data, action);
         if (newData != itemBean.data) {
           copy ??= state.toList();
-          copy[i] = itemBean.clone()..data = newData;
+          copy[i] = itemBean.clone(data: newData);
         }
       }
     }
@@ -132,39 +129,35 @@ Reducer<T> _dynamicReducer<T>(
 /// frame. in this time the sub component will use cache state.
 Get<Object> _subGetter(Get<List<ItemBean>> getter, int index) {
   final List<ItemBean> curState = getter();
-  final Object subCache = curState[index].data;
+  ItemBean cacheItem = curState[index];
+
   return () {
     final List<ItemBean> newState = getter();
 
     /// Either all sub-components use cache or not.
-    if (_isSimilar(curState, newState)) {
-      return newState[index].data;
-    } else {
-      return subCache;
+    if (newState != null && newState.length > index) {
+      final ItemBean newItem = newState[index];
+      if (_couldReuse(cacheItem, newItem)) {
+        cacheItem = newItem;
+      }
     }
+
+    return cacheItem.data;
   };
 }
 
-/// Judge [oldList] and [newList] is similar
-///
-/// if true: means the list size and every itemBean type & data.runtimeType
-/// is equal.
-bool _isSimilar(
-  List<ItemBean> oldList,
-  List<ItemBean> newList,
-) {
-  if (oldList != newList &&
-      oldList?.length == newList.length &&
-      Collections.isNotEmpty(newList)) {
-    bool isEvery = true;
-    for (int i = 0; i < newList.length; i++) {
-      if (oldList[i].type != newList[i].type ||
-          oldList[i].data.runtimeType != newList[i].data.runtimeType) {
-        isEvery = false;
-        break;
-      }
-    }
-    return isEvery;
+bool _couldReuse(ItemBean beanA, ItemBean beanB) {
+  if (beanA.type != beanB.type) {
+    return false;
   }
-  return false;
+
+  final Object dataA = beanA.data;
+  final Object dataB = beanB.data;
+  if (dataA.runtimeType != dataB.runtimeType) {
+    return false;
+  }
+
+  final Object keyA = dataA is StateKey ? dataA.key() : null;
+  final Object keyB = dataB is StateKey ? dataB.key() : null;
+  return keyA == keyB;
 }

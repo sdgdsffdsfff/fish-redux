@@ -1,11 +1,11 @@
 import 'package:fish_redux/fish_redux.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Action;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:test_widgets/page/action.dart';
-import 'package:test_widgets/page/exception.dart';
 import 'package:test_widgets/page/page.dart';
 import 'package:test_widgets/page/state.dart';
 import 'package:test_widgets/test_base.dart';
+
 import '../instrument.dart';
 import '../track.dart';
 
@@ -18,6 +18,7 @@ void main() {
           wrapper: (Widget child) => PageWrapper(child));
       expect(page, isNotNull);
 
+      /// TODO
       final Widget pageWidget = page.buildPage(pageInitParams);
       expect(pageWidget, isNotNull);
 
@@ -308,7 +309,7 @@ void main() {
           ]));
     });
 
-    testWidgets('higherEffect', (WidgetTester tester) async {
+    testWidgets('effect', (WidgetTester tester) async {
       final Track track = Track();
 
       await tester.pumpWidget(TestStub(TestPage<ToDoList, Map>(
@@ -323,9 +324,8 @@ void main() {
               suf: (ToDoList state, Action action) {
             track.append('onReduce', state.clone());
           }),
-          higherEffect: (Context<ToDoList> ctx) => (Action action) =>
-              instrumentEffect(toDoListEffect,
-                  (Action action, Get<ToDoList> getState) {
+          effect: (Action action, Context<ToDoList> ctx) => instrumentEffect(
+                  toDoListEffect, (Action action, Get<ToDoList> getState) {
                 if (action.type == ToDoListAction.onAdd) {
                   track.append('onAdd', getState().clone());
                 } else if (action.type == ToDoListAction.onEdit) {
@@ -403,7 +403,7 @@ void main() {
                   suf: (ToDoList state, Action action) {
                 track.append('onReduce', state.clone());
               }),
-              higherEffect: (Context<ToDoList> ctx) => (Action action) =>
+              effect: (Action action, Context<ToDoList> ctx) =>
                   instrumentEffect<ToDoList>(toDoListEffect,
                       (Action action, Get<ToDoList> getState) {
                     if (action.type == ToDoListAction.onAdd) {
@@ -461,6 +461,7 @@ void main() {
           ]));
     });
 
+    /// TODO
     testWidgets('middleware', (WidgetTester tester) async {
       final Track track = Track();
 
@@ -476,7 +477,7 @@ void main() {
               suf: (ToDoList state, Action action) {
             track.append('onReduce', state.clone());
           }),
-          higherEffect: toDoListHigherEffect,
+          effect: toDoListEffect,
           middleware: <Middleware<ToDoList>>[
             instrumentMiddleware<ToDoList>(toDoListMiddleware,
                 pre: (action, getState) {

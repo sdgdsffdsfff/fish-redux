@@ -67,3 +67,49 @@
 - force update if driven by outside observable 
 - fix inverter bugs & optimization connectStores api 
 - modify the use of global state in example 
+- 
+## [0.2.1]
+- add forceUpdate api on context
+- fix bug in adapter’s appear & disappear if items are recycled
+- fix bug in connectStores api if page has no reducer
+
+## [0.2.2]
+- add congruent conn 
+- fields mainCtx & viewUpdater in ComponentState become public 
+- fix bug when a store recived action after teardown
+
+## [0.2.3]
+- Reconstruct Context
+- Breaking-change 
+  - Reconstruct dependencies
+  - Remove OOP style
+  - Remove higherEffect
+  - Remove deprecated api(Connector, createMixedStore, AutoDispose:follow, AutoDispose:follower)
+  - Remove unused DisposedException
+- Hide widgets.dart's Action to compate with flutter1.7
+- Compate with flutter_web
+
+## [0.2.4]
+- fix Context.broadcast bug #375
+- fix PrivateReducerMixin bug #380 
+- add LocalState
+
+## [0.2.5]
+- add ctx.listen api
+- rename LocalState to LocalProps
+- correct some comments 
+
+## [0.2.6]
+- add TickerProviderMixin
+- let dispatch return whatever result in effect. #462 
+- fix Reselect's _listEquals bug #457 
+- fix SingleTickerProviderMixin & TickerProviderMixin’s dispose bug #461 
+- add ClearOnDependenciesChanged 
+
+## [0.2.7]
+- add StateKey #461
+- reselect optimization #482
+
+## [0.2.8]
+- fix item-bean clone bug #493
+
